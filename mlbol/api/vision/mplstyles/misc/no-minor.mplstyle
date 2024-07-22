@@ -1,0 +1,3 @@
+# Disable minor ticks
+xtick.minor.visible: False   # visibility of minor ticks on x-axis
+ytick.minor.visible: False   # visibility of minor ticks on y-axis

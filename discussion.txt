@@ -1,0 +1,17 @@
+Fix \varepsilon, learning a model.
+
+Step 1: Data
+ format:
+    U.txt: | t | x | rho | u | T |
+    g.txt: | t | x | v | g |
+
+Step 2: Model 
+ architecture: U -> g
+    [branch:U(t_j,x_i)], [trunk:(t,x,v)] -> g(t,x,v)
+
+Step 3: Learning
+TBA.
+ 
+
+Step 4: Experiment
+

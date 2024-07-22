@@ -1,0 +1,7 @@
+# Medium-contrast color scheme
+# color-blind safe
+# from Paul Tot's website: https://personal.sron.nl/~pault/
+
+# Set color cycle
+# light blue, dark blue, light yellow, dark red, drak yellow, light red
+axes.prop_cycle : cycler('color', ['6699CC', '004488', 'EECC66', '994455', '997700', 'EE99AA'])

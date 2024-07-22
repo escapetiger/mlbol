@@ -1,0 +1,3 @@
+axes.grid: False             # disable grid lines
+xtick.minor.visible: False   # disable minor ticks on x-axis
+ytick.minor.visible: False   # disable minor ticks on y-axis

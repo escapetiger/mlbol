@@ -1,0 +1,3 @@
+# Standard color cycle
+# Set color cycle: blue, red, green, yellow, dark violet, black 
+axes.prop_cycle : cycler('color', ['0C5DA5', 'FF2C00', '00B945', 'FF9500', '9400D3', '000000'])

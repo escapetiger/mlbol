@@ -1,0 +1,20 @@
+# Matplotlib style for SIAM journal figures.
+# See https://www.siam.org/Portals/0/Books%20-For%20Authors/SIAM%20Style%20Manual.pdf?ver=2017-11-21-112335-700
+# NOTE: SIAM requires that a figure is prepared in CMYK format but Matplotlib can only draw figure in RGB format. One should look for another tool for format conversion.
+
+## ***************************************************************************
+## * FIGURE                                                                  *
+## ***************************************************************************
+# width <= 31picas, depth <= 51.1picas
+figure.figsize:     3.54, 2.65     # width/height=4/3, width=90mm(255pt)
+figure.dpi:         300            # resolution
+
+## ***************************************************************************
+## * FONT SIZE                                                               *
+## ***************************************************************************
+# rule-of-thumb : label size >= 7pt.
+axes.labelsize: 7
+xtick.labelsize: 7
+ytick.labelsize: 7
+legend.fontsize: 7
+font.size: 7

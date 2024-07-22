@@ -1,0 +1,5 @@
+# Comparison of one-dimensional solutions.
+
+# markers: line, circle, square, upper triangle, down triangle, left triangle, right triangle, diamond
+# colors:  black, orange, blue, cyan, dark voilet, red, teal
+axes.prop_cycle : (cycler('color', ['000000', '4477AA', 'EE6677', '228833', 'CCBB44', '66CCEE', 'AA3377', 'BBBBBB']) + cycler('linestyle', ['-', ' ', ' ', ' ', ' ', ' ', ' ', ' ']) + cycler('marker', [' ', 'o', 's', '^', 'v', '<', '>', 'd']))

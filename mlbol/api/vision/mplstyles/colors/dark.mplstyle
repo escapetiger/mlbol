@@ -1,0 +1,6 @@
+# Dark color scheme
+# from Paul Tot's website: https://personal.sron.nl/~pault/
+
+# Set color cycle
+axes.prop_cycle : cycler('color', ['222255', '225555', '225522', '666633', '663333', '555555'])
+

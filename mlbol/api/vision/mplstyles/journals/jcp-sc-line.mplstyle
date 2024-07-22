@@ -1,0 +1,19 @@
+# Matplotlib style for JCP journal figures.
+# Single column, line art.
+# See https://www.elsevier.com/about/policies-and-standards/author/artwork-and-media-instructions/artwork-sizing
+
+## ***************************************************************************
+## * FIGURE                                                                  *
+## ***************************************************************************
+figure.figsize:     3.54, 2.65     # width/height=4/3, width=90mm(255pt)
+figure.dpi:         1000           # resolution
+
+## ***************************************************************************
+## * FONT SIZE                                                               *
+## ***************************************************************************
+# rule-of-thumb : label size >= 7pt.
+axes.labelsize: 7
+xtick.labelsize: 7
+ytick.labelsize: 7
+legend.fontsize: 7
+font.size: 7

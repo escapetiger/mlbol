@@ -1,0 +1,19 @@
+# Matplotlib style for JCP journal figures.
+# One and a half page, combination art.
+# See https://www.elsevier.com/about/policies-and-standards/author/artwork-and-media-instructions/artwork-sizing
+
+## ***************************************************************************
+## * FIGURE                                                                  *
+## ***************************************************************************
+figure.figsize:     5.51, 4.13     # width/height=4/3, width=140mm(397pt)
+figure.dpi:         500           # resolution
+
+## ***************************************************************************
+## * FONT SIZE                                                               *
+## ***************************************************************************
+# rule-of-thumb : label size >= 7pt.
+axes.labelsize: 7
+xtick.labelsize: 7
+ytick.labelsize: 7
+legend.fontsize: 7
+font.size: 7

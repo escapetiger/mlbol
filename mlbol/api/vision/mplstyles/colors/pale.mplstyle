@@ -1,0 +1,6 @@
+# Pale color scheme
+# from Paul Tot's website: https://personal.sron.nl/~pault/
+
+# Set color cycle
+axes.prop_cycle : cycler('color', ['BBCCEE', 'CCEEFF', 'CCDDAA', 'EEEEBB', 'FFCCCC', 'DDDDDD'])
+
