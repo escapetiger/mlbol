@@ -1,202 +1,409 @@
+"""
+ * ----------------------------------------------
+ * Copyright (c) {2024} Qiming Wang, Xiamen University
+ * ----------------------------------------------
+ * @file    :   dg_sod.py
+ * @date    :   2024/07/31 20:56:49
+ * @author  :   Qiming Wang
+ * @brief   :   Nodal DG scheme for the BGK equation with macro-micro decomposition on one mesh
+ *
+"""
 import numpy as np
-from time import time
+import time
+import os
 
-# Initialize data
+# Constants
+nd = 400
+mnm = 3
+md = 9
+ndm = nd + 3
+mg = 5
+nvm = 99
+tol = 1e-6
+sft = 3
+
+# initialize
 def initdata():
-    # Implementation of data initialization
-    pass
+    # Allocate the global variables
+    # /solution: u, g /tmp: u0, g0, utem, uc, gc /flux: flxu, flxg, flxmu, flxmg /grid: x, dx, cdx, dx2, v, vq, wq, vleft, vright
+    global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
+    # /gauss: xq, cq, xp, wt, ai /rk_coefficient: rk_ex, rk_im /parameter: mp, mn, mo, i_bc /integer: kcmax, kcount, nx
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
+    # /time: t, dt, tfinal, eps, pi /CFL: cflc, cfld, em /vel: vmax /heat_ratio: gamma, gm1 /hybrid: indk
+    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    u = np.zeros((md + 1, ndm + 4, mnm + 1))
+    g = np.zeros((md + 1, ndm + 4, nvm + 1))
+    u0 = np.zeros((md + 1, ndm + 4, mnm + 1))
+    g0 = np.zeros((md + 1, ndm + 4, nvm + 1))
+    utem = np.zeros((md + 1, ndm + 4))
+    uc = np.zeros((md + 1, ndm + 4, mnm + 1, 4))
+    gc = np.zeros((md + 1, ndm + 4, nvm + 1, 4))
+    flxu = np.zeros((md + 1, ndm + 4, mnm + 1, 4))
+    flxg = np.zeros((md + 1, ndm + 4, mnm + 1, 4))
+    flxmu = np.zeros((md + 1, ndm + 4, nvm + 1, 4))
+    flxmg = np.zeros((md + 1, ndm + 4, nvm + 1, 4))
+    x = np.zeros(ndm + 4)
+    v = np.zeros(nvm+1)
+    vq = np.zeros(nvm+1)
+    wq = np.zeros(nvm+1)
+    xq = np.zeros(mg)
+    cq = np.zeros(mg)
+    xp = np.zeros(md+1)
+    wt = np.zeros(md+1)
+    ai = np.zeros(md+1)
+    rk_ex = np.zeros((4, 4))
+    rk_im = np.zeros((4, 4))
+    kcount = 0
+    t = 0.0
+    dt = 0.0
+    tfinal = 0.1
+    pi = np.pi
+    cfld = 0.0
+
+    # initdata: set up the necessary data before setting the initial condition
+    # Gauss quadrature for integration
+    xq = [0.906179845938664, 0.538469310105683, 0.0, -0.538469310105683, -0.906179845938664]
+    cq = [0.236926885056189, 0.478628670499366, 0.568888888888889, 0.478628670499366, 0.236926885056189]
+    rk_ex = np.array([
+        [0.5, 0.0, 0.0, 0.0],
+        [0.611111111111111, 0.055555555555556, 0.0, 0.0],
+        [0.833333333333333, -0.833333333333333, 0.5, 0.0],
+        [0.25, 1.75, 0.75, -1.75]
+    ])
+    rk_im = np.array([
+        [0.5, 0.0, 0.0, 0.0],
+        [0.16666666666667, 0.5, 0.0, 0.0],
+        [-0.5, 0.5, 0.5, 0.0],
+        [1.5, -1.5, 0.5, 0.5]
+    ])
+    [vq.__setitem__(i, -1.+i*2./nvm) for i in range(0, nvm+1)]
+    eps = 0.01
+    mo = 3
+    mp = mo - 1
+    mn = mnm
+    cflc = 0.05
+    tfinal = 0.1
+    i_bc = 3
+    kcmax = 100000000
+    # nodal DG Gauss quadrature points and weights
+    if mp==0:
+        xp[0] = 0.
+        wt[0] = 1.
+    elif mp==1:
+        xp[0] = -1. / np.sqrt(3.) / 2.
+        xp[1] = -xp[0]
+        wt[0] = 1. / 2.
+        wt[1] = wt[0]
+    elif mp==2:
+        xp[0] = -np.sqrt(3. / 5.) / 2.
+        xp[1] = 0.
+        xp[2] = -xp[0]
+        wt[0] = 5. / 18.
+        wt[1] = 4. / 9.
+        wt[2] = wt[0]
+    elif mp==3:
+        xp[0] = -np.sqrt((3. + 2. * np.sqrt(6. / 5.)) / 7.) / 2.
+        xp[1] = -np.sqrt((3. - 2. * np.sqrt(6. / 5.)) / 7.) / 2.
+        xp[2] = -xp[1]
+        xp[3] = -xp[0]
+        wt[0] = (18. - np.sqrt(30.)) / 72.
+        wt[1] = (18. + np.sqrt(30.)) / 72.
+        wt[2] = wt[1]
+        wt[3] = wt[0]
+    # inverse of weights
+    [ai.__setitem__(k, 1./wt[k]) for k in range(0, mp+1)]
+    # here gamma is different from classic compressible Euler eqns
+    gamma = 3.
+    gm1 = gamma - 1.
 
 def init():
-    # Implementation of initialization
-    pass
+    global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
+    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    xleft = -0.2
+    xright = 1.2
+    xlen = xright - xleft
+    dx = xlen / nx
+    cdx = 1 / dx
+    dx2 = dx / 2
+    x[0+sft] = xleft - 0.5 * dx
+    x[-1+sft] = x[0+sft] - dx
+    x[-2+sft] = x[-1+sft] - dx
+    x[-3+sft] = x[-2+sft] - dx
+    [x.__setitem__(i, x[i-1] + dx) for i in range(1+sft, nx+3+sft+1)]
+    vleft = -4.5
+    vright = -vleft
+    vmax = abs(vleft)
+    em = 3 * (vmax + 1)
+    [v.__setitem__(j, (vright-vleft)/2*vq[j]+(vright+vleft)/2) for j in range(0, nvm+1)]
+
+    rhol = 1.
+    vell = 0.
+    teml = 1. / 1.
+
+    rhor = 0.125
+    velr = 0.
+    temr = 0.1 / 0.125
+
+    for i in range(-3+sft, nx+3+sft+1):
+        for k in range(0, mp+1):
+            if i <= nx/2 + sft:
+                u[k, i, 1] = rhol
+                u[k, i, 2] = rhol * vell
+                u[k, i, 3] = 0.5 * rhol * vell ** 2 + 0.5 * rhol * teml
+            else:
+                u[k, i, 1] = rhor
+                u[k, i, 2] = rhor * velr
+                u[k, i, 3] = 0.5 * rhor * velr ** 2 + 0.5 * rhor * temr
 
 def setdt():
-    # Implementation of setting dt
-    pass
+    global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
+    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    dt = cflc * dx / max(em, abs(vleft))
+    if (t + dt) > tfinal:
+        dt = tfinal - t
 
-def saves(nw):
-    # Implementation of save function
-    pass
+    return dt
 
 def bc_u():
-    # Implementation of boundary condition for u
-    pass
+    global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
+    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    if i_bc == 1:
+        for i in range(0, mp + 1):
+            for k in range(4):
+                for m in range(1, mn + 1):
+                    u[i, -k + sft, m] = u[i, k + 1 + sft, m]
+                    u[i, nx + k + 1 + sft, m] = u[i, nx - k + sft, m]
+                u[i, -k + sft, 2] = -u[i, k + 1 + sft, 2]
+                u[i, nx + k + 1 + sft, 2] = -u[i, nx - k + sft, 2]
+                utem[i, -k + sft] = utem[i, k + 1 + sft]
+                utem[i, nx + k + 1 + sft] = utem[i, nx - k + sft]
+
+    elif i_bc == 2:
+        for i in range(0, mp + 1):
+            for k in range(4):
+                for m in range(1, mn + 1):
+                    u[i, -k + sft, m] = u[i, nx - k + sft, m]
+                    u[i, nx + k + sft, m] = u[i, k + sft, m]
+                utem[i, -k + sft] = utem[i, nx - k + sft]
+                utem[i, nx + k + sft] = utem[i, k + sft]
+
+    elif i_bc == 3:
+        for i in range(0, mp + 1):
+            for k in range(4):
+                for m in range(1, mn + 1):
+                    u[i, -k + sft, m] = u[i, 1 + sft, m]
+                    u[i, nx + k + sft, m] = u[i, nx + sft, m]
+                utem[i, -k + sft] = utem[i, 1 + sft]
+                utem[i, nx + k + sft] = utem[i, nx + sft]
 
 def bc_g():
-    # Implementation of boundary condition for g
-    pass
+    global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
+    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    if i_bc == 1:
+        for i in range(0, mp + 1):
+            for k in range(4):
+                for j in range(0, (nvm - 1) // 2 + 1):
+                    # Outflow part
+                    g[i, -k + sft, j] = g[i, 1 + sft, j]
+                    g[i, nx + k + 1 + sft, nvm - j] = g[i, nx + sft, nvm - j]
+                    # Reflective for the other part
+                    g[i, -k + sft, nvm - j] = g[i, -k + sft, j]
+                    g[i, nx + k + 1 + sft, j] = g[i, nx + k + 1 + sft, nvm - j]
 
-def tvb_limiter():
-    # Implementation of TVB limiter
-    pass
+    elif i_bc == 2:
+        for i in range(0, mp + 1):
+            for k in range(4):
+                for j in range(0, nvm + 1):
+                    g[i, -k + sft, j] = g[i, nx - k + sft, j]
+                    g[i, nx + k + sft, j] = g[i, k + sft, j]
 
-def update(io):
-    # Implementation of update function
-    pass
+    elif i_bc == 3:
+        for i in range(0, mp + 1):
+            for k in range(4):
+                for j in range(0, nvm + 1):
+                    g[i, -k + sft, j] = g[i, 0 + sft, j]
+                    g[i, nx + k + sft, j] = g[i, nx + sft, j]
+
+def pn(xx, kk):
+    global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
+    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    pn = 1.
+    for k in range(0, mp + 1):
+        if k != kk:
+            pn = pn * (xx - xp[k])/(xp[kk] - xp[k])
+    return pn
 
 def pnd(xx, kk):
-    # Implementation of pnd function
-    pass
-
-# Third-order IMEX scheme
-def dgimex3():
-    bc_u()
-    bc_g()
-    tvb_limiter()
-
-    indk = 0
-
-    u0 = u.copy()
-    g0 = g.copy()
-    update(1)
-
-    for io in range(2, 5):
-        tvb_limiter()
-        update(io)
-
-# Volume integral for flux F(U)
-def fint(a, vc, kk, mm):
-    vc.fill(0)
+    global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
+    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    pnd = 0.
     if mp >= 1:
-        for k in range(mp + 1):
-            xx = xp[k]
-            uu = a[k, :]
+        for k1 in range(0, mp + 1):
+            if k1 != kk:
+                temp = 1.
+                for k2 in range(0, mp + 1):
+                    if k2 != k1 and k2 != kk:
+                        temp *= (xx-xp[k2])/(xp[kk]-xp[k2])
 
-            if mm == 1:
-                ff = uu[1]
-            elif mm == 2:
-                ff = 2. * uu[2]
-            elif mm == 3:
-                ff = (uu[2] + 2. * (uu[2] - 0.5 * uu[1] ** 2 / uu[0])) * uu[1] / uu[0]
+                pnd += temp / (xp[kk]-xp[k1])
+
+    return pnd
+
+def poly(a, m, xx0):
+    global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
+    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    poly = 0.
+    poly = sum(a[i] * pn(xx0, i) for i in range(0, m + 1))
+    return poly
+
+def uave(a):
+    global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
+    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    uave=0.
+    uave = sum(wt[k] * a[k] for k in range(0, mp + 1))
+    return uave
+
+def sminmod3(xx, yy, zz):
+    global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
+    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    if abs(xx) <= 1. * dx ** 2:
+        sminmod3 = xx
+    else:
+        sminmod3 = np.sign(xx) * max(0.0, min(abs(xx), yy * np.sign(xx), zz * np.sign(xx)))
+    return sminmod3
+
+def vm(vv, mm):
+    global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
+    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    if mm==1:
+        vm = 1.
+    elif mm==2:
+        vm = vv
+    elif mm==3:
+        vm = vv ** 2 / 2.
+    return vm
+
+def ave(a):
+    global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
+    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    ave = 0.
+    ave = sum(a[j] for j in range(1, nvm - 1 + 1))
+    ave = ave + 0.5 * (a[0] + a[nvm])
+    ave = ave * (vright - vleft) / nvm
+    return ave
+
+def gint(a, kk):
+    global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
+    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    vc = 0.
+    if mp >= 1:
+        vc = sum(wt[k] * a[k] * pnd(xp[k], kk) for k in range(0, mp + 1))
+
+    return vc
+
+def fint(a, kk, mm):
+    global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
+    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    uu = np.zeros(mnm + 1)
+    vc = 0.
+    if mp >= 1:
+        for k in range(0, mp + 1):
+            xx = xp[k]
+            [uu.__setitem__(m, a[k, m]) for m in range(1, mn + 1)]
+            if mm==1:
+                ff = uu[2]
+            elif mm==2:
+                ff = 2. * uu[3]
+            elif mm==3:
+                ff = (uu[3] + 2. * (uu[3] - 0.5 * uu[2] ** 2 / uu[1])) * uu[2] / uu[1]
 
             vc += wt[k] * ff * pnd(xx, kk)
 
-# Volume integral for flux M(U)
-def urint(aa, vc, kk):
-    vc.fill(0)
+    return vc
+
+def umint(a, kk):
+    global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
+    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    aa = np.zeros(md + 1)
+    uu = np.zeros(mnm + 1)
+    vc = 0.
     if mp >= 1:
-        for k in range(mp + 1):
+        for k in range(0, mp + 1):
             xx = xp[k]
-            uu = aa[k, :]
+            [uu.__setitem__(m, a[k, m]) for m in range(1, mn + 1)]
 
-            rho = uu[0]
-            vel = uu[1] / uu[0]
-            tem = (uu[2] - 0.5 * uu[1] ** 2 / uu[0]) / 0.5 / uu[0]
-
-            vc[0] += wt[k] * rho * pnd(xx, kk)
-            vc[1] += wt[k] * vel * pnd(xx, kk)
-            vc[2] += wt[k] * tem * pnd(xx, kk)
-
-def urint2(aa, vc, kk):
-    vc.fill(0)
-    if mp >= 1:
-        for k in range(mp + 1):
-            xx = xp[k]
-            uu = aa[k, :]
-
-            vc[0] += wt[k] * uu[0] * pnd(xx, kk)
-            vc[1] += wt[k] * uu[1] * pnd(xx, kk)
-            vc[2] += wt[k] * uu[2] * pnd(xx, kk)
-
-def umint(a, vc, kk):
-    vc.fill(0)
-    if mp >= 1:
-        for k in range(mp + 1):
-            xx = xp[k]
-            uu = a[k, :]
-
-            tem = abs((uu[2] - 0.5 * uu[1] ** 2 / uu[0]) / 0.5 / uu[0])
-
+            tem = abs((uu[3] - 0.5 * uu[2] ** 2 / uu[1]) / 0.5 / uu[1])
             vc += wt[k] * tem * pnd(xx, kk)
 
-def gint(a, vc, kk):
-    vc.fill(0)
-    if mp >= 1:
-        for k in range(mp + 1):
-            vc += wt[k] * a[k] * pnd(xp[k], kk)
+    return vc
 
-# Main program
-def main():
-    initdata()
+def proj(a, uu, vv):
+    global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
+    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    b = np.zeros(nvm + 1)
 
-    nx = 50
+    rho = uu[1]
+    vel = uu[2] / uu[1]
+    tem = abs(uu[3] / 0.5 / uu[1] - vel ** 2)
 
-    tbegin = time()
-    init()
-    setdt()
+    vmu = rho / np.sqrt(2.0 * pi * tem) * np.exp(-(vv - vel) ** 2 / (2.0 * tem))
+    [b.__setitem__(j, (v[j] - vel) * a[j]) for j in range(nvm + 1)]
+    proj = ave(a) + (vv - vel) * ave(b) / tem
 
-    t = 0.0
-    tfinal = 1.0  # Example final time
-    dt = 0.01  # Example time step
-    kcount = 0
-    kcmax = 10000  # Example maximum count
+    [b.__setitem__(j, ((v[j] - vel) ** 2 / (2.0 * tem) - 0.5) * a[j]) for j in range(nvm + 1)]
+    proj += ((vv - vel) ** 2 / (2.0 * tem) - 0.5) * 2.0 * ave(b)
 
-    # ============== Begin time evolution ==============
-    while t < tfinal - 1.e-15 and kcount < kcmax:
-        nw = 0
-        ipause = 0
-        if t >= tfinal - 1.e-15:
-            break
+    proj = proj / rho * vmu
 
-        if kcount % 100 == 0:
-            ipause = 1
-            print(t, dt)
+    return proj
 
-        dgimex3()
+def update(io):
+    global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
+    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    fluxg = np.zeros(ndm + 4)
+    a = np.zeros(md + 1)
+    b = np.zeros(nvm + 1)
+    fluxu = np.zeros((ndm + 4, mnm + 1))
+    aa = np.zeros((md + 1, mnm + 1))
+    fluxmu = np.zeros(ndm + 4)
+    fluxr = np.zeros(ndm + 4)
+    um = np.zeros((ndm + 4, mnm + 1))
+    eigl = np.zeros(mnm + 1)
+    up = np.zeros((ndm + 4, mnm + 1))
+    eigr = np.zeros(mnm + 1)
+    gmass = np.zeros((md + 1, ndm + 4, nvm + 1))
+    umass = np.zeros((md + 1, ndm + 4, nvm + 1))
+    fm = np.zeros((ndm + 4, mnm + 1))
+    fp = np.zeros((ndm + 4, mnm + 1))
+    am = np.ones(mnm + 1) * 1e-15
+    utp = np.zeros(mnm + 1)
 
-        t += dt
-        kcount += 1
+    # Update u
+    bc_u()
+    bc_g()
 
-        if ipause == 1:
-            saves(nw)
-
-    # ============== End of time evolution ==============
-    tend = time()
-
-    print(' ')
-    print(t, kcount, tend - tbegin)
-    with open('output.txt', 'a') as f:
-        f.write(f"{t} {kcount} {tend - tbegin}\n")
-
-    saves(nw)
-
-if __name__ == "__main__":
-    main()
-
-def update(io, u, g, indk, v, vm, gamma, eps, dt, ai, cdx, rk_ex, rk_im):
-    # Initialize arrays
-    nx, mp, mn, nvm = u.shape[1] - 1, u.shape[0] - 1, u.shape[2] - 1, g.shape[2] - 1
     em = 1e-15
-    am = np.full(mn, 1e-15)
-
-    up = np.zeros((nx + 2, mn + 1))
-    um = np.zeros((nx + 2, mn + 1))
-    fp = np.zeros((nx + 2, mn + 1))
-    fm = np.zeros((nx + 2, mn + 1))
-    eigr = np.zeros(mn + 1)
-    eigl = np.zeros(mn + 1)
-    fluxu = np.zeros((nx + 2, mn + 1))
-    fluxr = np.zeros(nx + 2)
-    fluxg = np.zeros(nx + 2)
-    aa = np.zeros((mp + 1, mn + 1))
-    utp = np.zeros(mn + 1)
-    umass = np.zeros((mp + 1, nx + 1, nvm + 1))
-    gmass = np.zeros((mp + 1, nx + 1, nvm + 1))
-    flxu = np.zeros((mp + 1, nx + 1, mn + 1, io + 1))
-    flxg = np.zeros((mp + 1, nx + 1, mn + 1, io + 1))
-    gc = np.zeros((mp + 1, nx + 1, nvm + 1, io + 1))
-    uc = np.zeros((mp + 1, nx + 1, mn + 1, io + 1))
-    utem = np.zeros((mp + 1, nx + 1))
-
-    # Update boundary conditions
-    u = bc_u(u, nx, mp, mn)
-    g = bc_g(g, nx, mp, nvm)
-
-    # LF flux for F(U)
-    for i in range(-1, nx):
+    for i in range(-1 + sft, nx + 1 + sft):
         for mm in range(1, mn + 1):
-            a = u[:, i + 1, mm]
-            up[i, mm] = eval(a, mp, -0.5)
+            for k in range(0, mp + 1):
+                a[k] = u[k, i + 1, mm]
+            up[i, mm] = poly(a, mp, -0.5)
 
         rhor = up[i, 1]
         velr = up[i, 2] / up[i, 1]
@@ -209,11 +416,14 @@ def update(io, u, g, indk, v, vm, gamma, eps, dt, ai, cdx, rk_ex, rk_im):
         fp[i, 1] = up[i, 2]
         fp[i, 2] = 2 * engr
         fp[i, 3] = (engr + rhor * temr) * velr
-        am = np.maximum(am, np.abs(eigr[1:4]))
+        am[1] = max(am[1], abs(eigr[1]))
+        am[2] = max(am[2], abs(eigr[2]))
+        am[3] = max(am[3], abs(eigr[3]))
 
         for mm in range(1, mn + 1):
-            a = u[:, i, mm]
-            um[i, mm] = eval(a, mp, 0.5)
+            for k in range(0, mp + 1):
+                a[k] = u[k, i, mm]
+            um[i, mm] = poly(a, mp, 0.5)
 
         rhol = um[i, 1]
         vell = um[i, 2] / um[i, 1]
@@ -226,131 +436,379 @@ def update(io, u, g, indk, v, vm, gamma, eps, dt, ai, cdx, rk_ex, rk_im):
         fm[i, 1] = um[i, 2]
         fm[i, 2] = 2 * engl
         fm[i, 3] = (engl + rhol * teml) * vell
-        am = np.maximum(am, np.abs(eigl[1:4]))
+        am[1] = max(am[1], abs(eigl[1]))
+        am[2] = max(am[2], abs(eigl[2]))
+        am[3] = max(am[3], abs(eigl[3]))
 
-    em = np.max(am)
+    em = max(am[1], am[3])
 
-    for i in range(-1, nx):
+    for i in range(-1 + sft, nx + 1 + sft):
         for m in range(1, mn + 1):
             fluxu[i, m] = 0.5 * (fm[i, m] + fp[i, m] - em * (up[i, m] - um[i, m]))
 
-    # Heat flux of NS: central
-    for i in range(-1, nx):
-        if indk[i] == 1 or indk[i + 1] == 1 or indk[i - 1] == 1:
-            for k in range(mp + 1):
-                rho = u[k, i, 1]
-                vel = u[k, i, 2] / u[k, i, 1]
-                tem = abs(u[k, i, 3] / 0.5 / rho - vel ** 2)
-                a[k] = rho * tem * utem[k, i]
-            fluxr[i] = eval(a, mp, 0.5)
-
-            for k in range(mp + 1):
-                rho = u[k, i + 1, 1]
-                vel = u[k, i + 1, 2] / u[k, i + 1, 1]
-                tem = abs(u[k, i + 1, 3] / 0.5 / rho - vel ** 2)
-                a[k] = rho * tem * utem[k, i + 1]
-            fluxr[i] = eps * 0.5 * (fluxr[i] + eval(a, mp, -0.5))
-
     for m in range(1, mn + 1):
         # Flux of <vmg>: central
-        for i in range(-1, nx):
+        for i in range(-1 + sft, nx + 1 + sft):
             if indk[i] == 0 or indk[i + 1] == 0:
-                for k in range(mp + 1):
+                for k in range(0, mp + 1):
                     for j in range(nvm + 1):
                         b[j] = v[j] * vm(v[j], m) * g[k, i, j]
                     a[k] = ave(b)
-                fluxg[i] = eval(a, mp, 0.5)
+                fluxg[i] = poly(a, mp, 0.5)
 
-                for k in range(mp + 1):
+                for k in range(0, mp + 1):
                     for j in range(nvm + 1):
                         b[j] = v[j] * vm(v[j], m) * g[k, i + 1, j]
                     a[k] = ave(b)
-                fluxg[i] = eps * 0.5 * (fluxg[i] + eval(a, mp, -0.5))
+                fluxg[i] = eps * 0.5 * (fluxg[i] + poly(a, mp, -0.5))
 
-        for i in range(nx + 1):
-            if indk[i] == 0:
-                for k in range(mp + 1):
+        for i in range(0 + sft, nx + 1 + sft):
+            for k in range(0, mp + 1):
+                for kk in range(mp + 1):
+                    for j in range(nvm + 1):
+                        b[j] = v[j] * vm(v[j], m) * g[kk, i, j]
+                    a[kk] = eps * ave(b)
+                gcell = gint(a, k)
+
+                for mm in range(1, mn + 1):
                     for kk in range(mp + 1):
-                        for j in range(nvm + 1):
-                            b[j] = v[j] * vm(v[j], m) * g[kk, i, j]
-                        a[kk] = eps * ave(b)
-                    gcell = gint(a, gcell, k)
+                        aa[kk, mm] = u[kk, i, mm]
+                fcell = fint(aa, k, m)
+
+                flxu[k, i, m, io - 1] = -fcell + fluxu[i, m] * pn(0.5, k) - fluxu[i - 1, m] * pn(-0.5, k)
+                flxg[k, i, m, io - 1] = -gcell + fluxg[i] * pn(0.5, k) - fluxg[i - 1] * pn(-0.5, k)
+
+                ffu = 0.0
+                ffg = 0.0
+                for is_ in range(1, io + 1):
+                    ffu += rk_ex[io - 1, is_ - 1] * flxu[k, i, m, is_ - 1]
+                    ffg += rk_ex[io - 1, is_ - 1] * flxg[k, i, m, is_ - 1]
+                uc[k, i, m, io - 1] = u0[k, i, m] - dt * ai[k] * cdx * (ffu + ffg)
+
+    # update g with newest U
+    # note: U is recorded on each stage, which might not be necessary
+    for m in range(1, mn + 1):
+        for i in range(0 + sft, nx + 1 + sft):
+            for k in range(0, mp + 1):
+                u[k, i, m] = uc[k, i, m, io - 1]
+
+    bc_u()
+
+    # DG formulation of T_x: central flux
+    for i in range(-1 + sft, nx + 1 + sft):
+        for mm in range(1, mn + 1):
+            [a.__setitem__(kk, u[kk, i + 1, mm]) for kk in range(0, mp + 1)]
+            utp[mm] = poly(a, mp, -0.5)
+        rho = utp[1]
+        vel = utp[2] / utp[1]
+        tem = abs(utp[3] / 0.5 / rho - vel ** 2)
+        fluxmu[i] = tem
+
+        for mm in range(1, mn + 1):
+            [a.__setitem__(kk, u[kk, i, mm]) for kk in range(0, mp + 1)]
+            utp[mm] = poly(a, mp, 0.5)
+        rho = utp[1]
+        vel = utp[2] / utp[1]
+        tem = abs(utp[3] / 0.5 / rho - vel ** 2)
+        fluxmu[i] = 0.5 * (tem + fluxmu[i])
+
+    for i in range(0 + sft, nx + 1 + sft):
+        for k in range(0, mp + 1):
+            for mm in range(1, mn + 1):
+                [aa.__setitem__((kk, mm), u[kk, i, mm]) for kk in range(0, mp + 1)]
+                utp[mm] = u[k, i, mm]
+
+            umcell = umint(aa, k)
+            utem[k, i] = ai[k] * cdx * (-umcell + fluxmu[i] * pn(0.5, k) - fluxmu[i - 1] * pn(-0.5, k))
+
+    # v loop
+    for j in range(0, nvm + 1):
+        # upwind flux for vg
+        if v[j] >= 0.:
+            for i in range(-1 + sft, nx + 1 + sft):
+                [a.__setitem__(k, g[k, i, j]) for k in range(0, mp + 1)]
+                fluxg[i] = eps * poly(a, mp, 0.5)
+        else:
+            for i in range(-1 + sft, nx + 1 + sft):
+                [a.__setitem__(k, g[k, i + 1, j]) for k in range(0, mp + 1)]
+                fluxg[i] = eps * poly(a, mp, -0.5)
+
+        for i in range(0 + sft, nx + 1 + sft):
+            for k in range(0, mp + 1):
+                [a.__setitem__(kk, eps * g[kk, i, j]) for kk in range(0, mp + 1)]
+                gcell = gint(a, k)
+                gmass[k, i, j] = -gcell + fluxg[i] * pn(0.5, k) - fluxg[i - 1] * pn(-0.5, k)
+                gmass[k, i, j] = v[j] * gmass[k, i, j]
+
+        # (I - II)vMx = AMT_x / sqrt(T): scheme II
+        for i in range(0 + sft, nx + 1 + sft):
+            for k in range(0, mp + 1):
+                for mm in range(1, mn + 1):
+                    [aa.__setitem__((kk, mm), u[kk, i, mm]) for kk in range(0, mp + 1)]
+                    utp[mm] = u[k, i, mm]
+                rho = utp[1]
+                vel = utp[2] / utp[1]
+                tem = abs(utp[3] / 0.5 / rho - vel ** 2)
+
+                coefA = ((v[j] - vel) ** 2 / (2. * tem) - 3. / 2.) * (v[j] - vel) / tem
+                fmu = rho / np.sqrt(2. * pi * tem) * np.exp(-(v[j] - vel) ** 2 / (2. * tem))
+                umass[k, i, j] = coefA * fmu * utem[k, i]
+
+    # projection I - II on vg
+    for i in range(0 + sft, nx + 1 + sft):
+        for k in range(0, mp + 1):
+            [utp.__setitem__(mm, u[k, i, mm]) for mm in range(1, mn + 1)]
+            for j in range(0, nvm + 1):
+                [b.__setitem__(jj, gmass[k, i, jj]) for jj in range(0, nvm + 1)]
+                gave = proj(b, utp, v[j])
+                flxmg[k, i, j, io - 1] = gmass[k, i, j] - gave
+                flxmu[k, i, j, io - 1] = umass[k, i, j]
+
+                ffu = 0.
+                ffg = 0.
+                for is_ in range(1, io + 1):
+                    ffu = ffu + rk_im[io - 1, is_ - 1] * flxmu[k, i, j, is_ - 1]
+                    ffg = ffg + rk_ex[io - 1, is_ - 1] * flxmg[k, i, j, is_ - 1]
+
+                gg = 0.
+                if io >= 2:
+                    gg = sum(rk_im[io - 1, is_ - 1] * gc[k, i, j, is_ - 1] for is_ in range(1, io - 1 + 1))
+
+                gc[k, i, j, io - 1] = eps / dt * g0[k, i, j] - (ai[k] * cdx * ffg + ffu + gg)
+                gc[k, i, j, io - 1] = gc[k, i, j, io - 1] / (eps / dt + rk_im[io - 1, io - 1])
+                g[k, i, j] = gc[k, i, j, io - 1]
+
+
+def tvb_limiter():
+    global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
+    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    evr = np.zeros((ndm + 4, mnm + 1, mnm + 1))
+    evl = np.zeros((ndm + 4, mnm + 1, mnm + 1))
+    ind = np.zeros((ndm + 4, mnm + 1))
+    ubar = np.zeros((ndm + 4, mnm + 1))
+    dm = np.zeros(mnm + 1)
+    dp = np.zeros(mnm + 1)
+    dt0 = np.zeros(mnm + 1)
+    a = np.zeros(md + 1)
+    dtm = np.zeros(mnm + 1)
+    dtp = np.zeros(mnm + 1)
+    ddtm = np.zeros(mnm + 1)
+    ddtp = np.zeros(mnm + 1)
+    utx = np.zeros(mnm + 1)
+    uk = np.zeros((md + 1, ndm + 4, mnm + 1))
+    ux = np.zeros((ndm + 4, mnm + 1))
+    um = np.zeros((ndm + 4, mnm + 1))
+    up = np.zeros((ndm + 4, mnm + 1))
+
+    # Example of boundary conditions and computation
+    if mp >= 1:
+        bc_u()
+        for m in range(1, mn + 1):
+            for i in range(-3 + sft, nx + 3 + 1 + sft):
+                for k in range(0, mp + 1):
+                    a[k] = u[k, i, m]
+
+                um[i, m] = poly(a, mp, 0.5)
+                up[i, m] = poly(a, mp, -0.5)
+                ubar[i, m] = uave(a)
+                uxx = 0.
+                uxx = sum(a[k]*xp[k] for k in range(0, mp + 1))
+                ux[i, m] = 12.0 * uxx
+
+        # Compute characteristic field
+        for i in range(0 + sft, nx + 1 + sft):
+            rho = ubar[i, 1]
+            vel = ubar[i, 2] / ubar[i, 1]
+            tem = np.abs(ubar[i, 3] / 0.5 / rho - vel ** 2)
+            eng = ubar[i, 3]
+
+            vxm = vel
+            hm = eng / rho + tem
+            qm = 0.5 * vxm ** 2
+            cm = np.sqrt(gm1 * abs(hm - qm))
+            t0 = vxm * cm
+
+            evr[i, 1, 1] = 1.0
+            evr[i, 1, 2] = 1.0
+            evr[i, 1, 3] = 1.0
+            evr[i, 2, 1] = vxm - cm
+            evr[i, 2, 2] = vxm
+            evr[i, 2, 3] = vxm + cm
+            evr[i, 3, 1] = hm - t0
+            evr[i, 3, 2] = qm
+            evr[i, 3, 3] = hm + t0
+
+            rcm = 1.0 / cm
+            b1 = gm1 * rcm ** 2
+            b2 = qm * b1
+            t0 = vxm * rcm
+            t1 = b1 * vxm
+            t2 = 0.5 * b1
+
+            evl[i, 1, 1] = 0.5 * (b2 + t0)
+            evl[i, 1, 2] = -0.5 * (t1 + rcm)
+            evl[i, 1, 3] = t2
+            evl[i, 2, 1] = 1.0 - b2
+            evl[i, 2, 2] = t1
+            evl[i, 2, 3] = -b1
+            evl[i, 3, 1] = 0.5 * (b2 - t0)
+            evl[i, 3, 2] = -0.5 * (t1 - rcm)
+            evl[i, 3, 3] = t2
+
+        # Correction for boundary values in cell i
+        for i in range(0 + sft, nx + 1 + sft):
+            for m in range(1, mn + 1):
+                dm[m] = ubar[i, m] - ubar[i - 1, m]
+                dp[m] = ubar[i + 1, m] - ubar[i, m]
+
+            for m in range(1, mn + 1):
+                dt0[m] = 0.0
+                dtm[m] = 0.0
+                dtp[m] = 0.0
+                ddtm[m] = 0.0
+                ddtp[m] = 0.0
+                utx[m] = 0.0
+
+                for mm in range(1, mn + 1):
+                    dt0[m] += evl[i, m, mm] * ubar[i, mm]
+                    dtm[m] += evl[i, m, mm] * dm[mm]
+                    dtp[m] += evl[i, m, mm] * dp[mm]
+
+                    ddtm[m] += evl[i, m, mm] * um[i, mm]
+                    ddtp[m] += evl[i, m, mm] * up[i, mm]
+                    utx[m] += evl[i, m, mm] * ux[i, mm]
+
+                for k in range(0, mp + 1):
+                    uk[k, i, m] = 0.0
 
                     for mm in range(1, mn + 1):
-                        for kk in range(mp + 1):
-                            aa[kk, mm] = u[kk, i, mm]
-                    fcell = fint(aa, fcell, k, m)
+                        uk[k, i, m] += evl[i, m, mm] * u[k, i, mm]
 
-                    flxu[k, i, m, io] = -fcell + fluxu[i, m] * pn(0.5, k) - fluxu[i - 1, m] * pn(-0.5, k)
-                    flxg[k, i, m, io] = -gcell + fluxg[i] * pn(0.5, k) - fluxg[i - 1] * pn(-0.5, k)
+            for m in range(1, mn + 1):
+                dr = sminmod3(ddtm[m] - dt0[m], dtm[m], dtp[m])
+                dl = sminmod3(dt0[m] - ddtp[m], dtm[m], dtp[m])
+                ur = dt0[m] + dr
+                ul = dt0[m] - dl
+                if abs(ur - ddtm[m]) > tol or abs(ul - ddtp[m]) > tol:
+                    ind[i, m] = 1
 
-                    ffu = 0
-                    ffg = 0
-                    for is_ in range(1, io + 1):
-                        ffu += rk_ex[io, is_] * flxu[k, i, m, is_]
-                        ffg += rk_ex[io, is_] * flxg[k, i, m, is_]
-                    uc[k, i, m, io] = u[k, i, m] - dt * ai[k] * cdx * (ffu + ffg)
-            elif indk[i] == 1:
-                for k in range(mp + 1):
+            for m in range(1, mn + 1):
+                if ind[i, m] == 1:
+                    uhx = sminmod3(utx[m], dtm[m] * 2.0, dtp[m] * 2.0)
+                    for k in range(0, mp + 1):
+                        uk[k, i, m] = dt0[m] + uhx * xp[k]
+
+            for k in range(0, mp + 1):
+                for m in range(1, mn + 1):
+                    u[k, i, m] = 0.0
                     for mm in range(1, mn + 1):
-                        for kk in range(mp + 1):
-                            aa[kk, mm] = u[kk, i, mm]
-                    fcell = fint(aa, fcell, k, m)
-                    flxu[k, i, m, io] = -fcell + fluxu[i, m] * pn(0.5, k) - fluxu[i - 1, m] * pn(-0.5, k)
-                    flxg[k, i, m, io] = 0
-                    if m == mn:
-                        for kk in range(mp + 1):
-                            rho = u[kk, i, 1]
-                            vel = u[kk, i, 2] / u[kk, i, 1]
-                            tem = u[kk, i, 3] / 0.5 / rho - vel ** 2
-                            a[kk] = eps * rho * tem * utem[kk, i]
-                        gcell = gint(a, gcell, k)
-                        flxg[k, i, m, io] = gcell - fluxr[i] * pn(0.5, k) + fluxr[i - 1] * pn(-0.5, k)
+                        u[k, i, m] += evr[i, m, mm] * uk[k, i, mm]
 
-                    ffu = 0
-                    ffg = 0
-                    for is_ in range(1, io + 1):
-                        ffu += rk_ex[io, is_] * flxu[k, i, m, is_]
-                        ffg += rk_ex[io, is_] * flxg[k, i, m, is_]
-                    uc[k, i, m, io] = u[k, i, m] - dt * ai[k] * cdx * (ffu + ffg)
+# 3rd order IMEX scheme
+def DGIMEX3():
+    global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
+    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    bc_u()
+    bc_g()
+    tvb_limiter()
 
-    return uc
+    indk = np.zeros(ndm + 4)
 
+    u0 = u
+    g0 = g
 
-def bc_u(u, nx, mp, mn):
-    # Boundary condition for u (example: periodic boundary)
-    u[:, -1, :] = u[:, nx, :]
-    u[:, nx + 1, :] = u[:, 0, :]
-    return u
+    update(1)
+
+    for io in range(2, 4 + 1):
+        tvb_limiter()
+        update(io)
 
 
-def bc_g(g, nx, mp, nvm):
-    # Boundary condition for g (example: periodic boundary)
-    g[:, -1, :] = g[:, nx, :]
-    g[:, nx + 1, :] = g[:, 0, :]
-    return g
+def saves():
+    global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
+    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    a = np.zeros(md + 1)
+    uu = np.zeros(mnm + 1)
+    b = np.zeros(nvm + 1)
+    utp = np.zeros(mnm + 1)
+    fluxmu = np.zeros(ndm + 4)
+    aa = np.zeros((md + 1, mnm + 1))
+
+    print(' ')
+    print(f' time={t}, {kcount}')
+
+    for i in range(-1 + sft, nx + 1 + sft):
+        for mm in range(1, mnm + 1):
+            [a.__setitem__(kk, u[kk, i + 1, mm]) for kk in range(0, mp + 1)]
+            utp[mm] = poly(a, mp, -0.5)
+        rho = utp[1]
+        vel = utp[2] / utp[1]
+        tem = utp[3] / 0.5 / utp[1] - vel ** 2
+        fluxmu[i] = tem
+
+        for mm in range(1, mnm + 1):
+            [a.__setitem__(kk, u[kk, i, mm]) for kk in range(0, mp + 1)]
+            utp[mm] = poly(a, mp, 0.5)
+        rho = utp[1]
+        vel = utp[2] / utp[1]
+        tem = utp[3] / 0.5 / utp[1] - vel ** 2
+
+        fluxmu[i] = 0.5 * (tem + fluxmu[i])
+
+    for i in range(0 + sft, nx + 1 + sft):
+        for k in range(0, mp + 1):
+            for mm in range(1, mn + 1):
+                [aa.__setitem__((kk, mm), u[kk, i, mm]) for kk in range(0, mp + 1)]
+            umcell = umint(aa, k)
+            utem[k, i] = ai[k] * cdx * (-umcell + fluxmu[i] * pn(0.5, k) - fluxmu[i - 1] * pn(-0.5, k))
+
+    for i in range(1, nx + 1):
+        for m in range(1, mn + 1):
+            [a.__setitem__(k, u[k, i, m]) for k in range(mp + 1)]
+            uu[m] = poly(a, mp, 0.0)
+
+        with open('U.txt', 'a') as f_u:
+            for k in range(mp + 1):
+                f_u.write(
+                    f"{t:.5e} {x[i] + xp[k] * dx:.5e} {u[k, i, 1]:.5e} {u[k, i, 2] / u[k, i, 1]:.5e} {(u[k, i, 3] - 0.5 * u[k, i, 2] ** 2 / u[k, i, 1]) / 0.5 / u[k, i, 1]:.5e}\n")
+
+        with open('g.txt', 'a') as f_g:
+            for k in range(mp + 1):
+                for j in range(nvm + 1):
+                    f_g.write(f"{t:.5e} {x[i] + xp[k] * dx:.5e} {v[j]:.5e} {g[k, i, j]:.5e}\n")
 
 
-def eval(a, mp, shift):
-    # Polynomial evaluation (placeholder)
-    return np.polyval(a[::-1], shift)
+# ================= Program starts =================
+initdata()
+nx = 50
 
+tbegin = time.time()
+init()
+dt = setdt()
 
-def ave(b):
-    # Average function (placeholder)
-    return np.mean(b)
+# ============== Begin time evolution ==============
 
+while t < tfinal - 1.e-15 and kcount < kcmax:
+    print(kcount)
+    ipause = 0
+    if t >= tfinal - 1.e-15:
+        break
+    if kcount % 200 == 0 and kcount != 0:
+        ipause = 1
+        print(t, dt)
 
-def gint(a, gcell, k):
-    # Integration function (placeholder)
-    return np.trapz(a)
+    DGIMEX3()
 
+    t += dt
+    kcount += 1
+    if ipause == 1:
+        saves()
 
-def fint(aa, fcell, k, m):
-    # Integration function (placeholder)
-    return np.trapz(aa[:, m])
+tend = time.time()
+print(' ')
+print(t, kcount, tend - tbegin)
 
-
-def pn(shift, k):
-    # Polynomial function (placeholder)
-    return np.polynomial.Polynomial.basis(k)(shift)
+saves()
