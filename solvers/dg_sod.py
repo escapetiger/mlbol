@@ -28,37 +28,34 @@ def initdata():
     # /solution: u, g /tmp: u0, g0, utem, uc, gc /flux: flxu, flxg, flxmu, flxmg /grid: x, dx, cdx, dx2, v, vq, wq, vleft, vright
     global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
     # /gauss: xq, cq, xp, wt, ai /rk_coefficient: rk_ex, rk_im /parameter: mp, mn, mo, i_bc /integer: kcmax, kcount, nx
-    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount
     # /time: t, dt, tfinal, eps, pi /CFL: cflc, cfld, em /vel: vmax /heat_ratio: gamma, gm1 /hybrid: indk
-    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    global t, dt, tfinal, eps, pi, cflc, em, vmax, gamma, gm1, indk
     u = np.zeros((md + 1, ndm + 4, mnm + 1))
     g = np.zeros((md + 1, ndm + 4, nvm + 1))
-    u0 = np.zeros((md + 1, ndm + 4, mnm + 1))
-    g0 = np.zeros((md + 1, ndm + 4, nvm + 1))
+    u0 = u.copy()
+    g0 = g.copy()
     utem = np.zeros((md + 1, ndm + 4))
     uc = np.zeros((md + 1, ndm + 4, mnm + 1, 4))
     gc = np.zeros((md + 1, ndm + 4, nvm + 1, 4))
-    flxu = np.zeros((md + 1, ndm + 4, mnm + 1, 4))
-    flxg = np.zeros((md + 1, ndm + 4, mnm + 1, 4))
-    flxmu = np.zeros((md + 1, ndm + 4, nvm + 1, 4))
-    flxmg = np.zeros((md + 1, ndm + 4, nvm + 1, 4))
+    flxu = uc.copy()
+    flxg = gc.copy()
+    flxmu = gc.copy()
+    flxmg = gc.copy()
     x = np.zeros(ndm + 4)
     v = np.zeros(nvm+1)
-    vq = np.zeros(nvm+1)
-    wq = np.zeros(nvm+1)
+    vq = v.copy()
+    wq = v.copy()
     xq = np.zeros(mg)
-    cq = np.zeros(mg)
+    cq = xq.copy()
     xp = np.zeros(md+1)
-    wt = np.zeros(md+1)
-    ai = np.zeros(md+1)
+    wt = xp.copy()
+    ai = xp.copy()
     rk_ex = np.zeros((4, 4))
-    rk_im = np.zeros((4, 4))
+    rk_im = rk_ex.copy()
     kcount = 0
     t = 0.0
-    dt = 0.0
-    tfinal = 0.1
     pi = np.pi
-    cfld = 0.0
 
     # initdata: set up the necessary data before setting the initial condition
     # Gauss quadrature for integration
@@ -76,32 +73,33 @@ def initdata():
         [-0.5, 0.5, 0.5, 0.0],
         [1.5, -1.5, 0.5, 0.5]
     ])
+    # print(rk_ex[1][0])
+    # os.system("pause")
     [vq.__setitem__(i, -1.+i*2./nvm) for i in range(0, nvm+1)]
     eps = 0.01
     mo = 3
     mp = mo - 1
     mn = mnm
     cflc = 0.05
-    tfinal = 0.1
     i_bc = 3
     kcmax = 100000000
     # nodal DG Gauss quadrature points and weights
-    if mp==0:
+    if mp == 0:
         xp[0] = 0.
         wt[0] = 1.
-    elif mp==1:
+    elif mp == 1:
         xp[0] = -1. / np.sqrt(3.) / 2.
         xp[1] = -xp[0]
         wt[0] = 1. / 2.
         wt[1] = wt[0]
-    elif mp==2:
+    elif mp == 2:
         xp[0] = -np.sqrt(3. / 5.) / 2.
         xp[1] = 0.
         xp[2] = -xp[0]
         wt[0] = 5. / 18.
         wt[1] = 4. / 9.
         wt[2] = wt[0]
-    elif mp==3:
+    elif mp == 3:
         xp[0] = -np.sqrt((3. + 2. * np.sqrt(6. / 5.)) / 7.) / 2.
         xp[1] = -np.sqrt((3. - 2. * np.sqrt(6. / 5.)) / 7.) / 2.
         xp[2] = -xp[1]
@@ -118,8 +116,8 @@ def initdata():
 
 def init():
     global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
-    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
-    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount
+    global t, dt, tfinal, eps, pi, cflc, em, vmax, gamma, gm1, indk
     xleft = -0.2
     xright = 1.2
     xlen = xright - xleft
@@ -158,8 +156,8 @@ def init():
 
 def setdt():
     global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
-    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
-    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount
+    global t, dt, tfinal, eps, pi, cflc, em, vmax, gamma, gm1, indk
     dt = cflc * dx / max(em, abs(vleft))
     if (t + dt) > tfinal:
         dt = tfinal - t
@@ -168,8 +166,8 @@ def setdt():
 
 def bc_u():
     global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
-    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
-    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount
+    global t, dt, tfinal, eps, pi, cflc, em, vmax, gamma, gm1, indk
     if i_bc == 1:
         for i in range(0, mp + 1):
             for k in range(4):
@@ -201,8 +199,8 @@ def bc_u():
 
 def bc_g():
     global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
-    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
-    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount
+    global t, dt, tfinal, eps, pi, cflc, em, vmax, gamma, gm1, indk
     if i_bc == 1:
         for i in range(0, mp + 1):
             for k in range(4):
@@ -230,18 +228,19 @@ def bc_g():
 
 def pn(xx, kk):
     global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
-    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
-    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount
+    global t, dt, tfinal, eps, pi, cflc, em, vmax, gamma, gm1, indk
     pn = 1.
     for k in range(0, mp + 1):
         if k != kk:
-            pn = pn * (xx - xp[k])/(xp[kk] - xp[k])
+            if xp[kk] != xp[k]:
+                pn *= (xx - xp[k])/(xp[kk] - xp[k])
     return pn
 
 def pnd(xx, kk):
     global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
-    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
-    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount
+    global t, dt, tfinal, eps, pi, cflc, em, vmax, gamma, gm1, indk
     pnd = 0.
     if mp >= 1:
         for k1 in range(0, mp + 1):
@@ -257,24 +256,24 @@ def pnd(xx, kk):
 
 def poly(a, m, xx0):
     global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
-    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
-    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount
+    global t, dt, tfinal, eps, pi, cflc, em, vmax, gamma, gm1, indk
     poly = 0.
     poly = sum(a[i] * pn(xx0, i) for i in range(0, m + 1))
     return poly
 
 def uave(a):
     global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
-    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
-    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount
+    global t, dt, tfinal, eps, pi, cflc, em, vmax, gamma, gm1, indk
     uave=0.
     uave = sum(wt[k] * a[k] for k in range(0, mp + 1))
     return uave
 
 def sminmod3(xx, yy, zz):
     global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
-    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
-    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount
+    global t, dt, tfinal, eps, pi, cflc, em, vmax, gamma, gm1, indk
     if abs(xx) <= 1. * dx ** 2:
         sminmod3 = xx
     else:
@@ -283,8 +282,8 @@ def sminmod3(xx, yy, zz):
 
 def vm(vv, mm):
     global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
-    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
-    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount
+    global t, dt, tfinal, eps, pi, cflc, em, vmax, gamma, gm1, indk
     if mm==1:
         vm = 1.
     elif mm==2:
@@ -295,8 +294,8 @@ def vm(vv, mm):
 
 def ave(a):
     global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
-    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
-    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount
+    global t, dt, tfinal, eps, pi, cflc, em, vmax, gamma, gm1, indk
     ave = 0.
     ave = sum(a[j] for j in range(1, nvm - 1 + 1))
     ave = ave + 0.5 * (a[0] + a[nvm])
@@ -305,8 +304,8 @@ def ave(a):
 
 def gint(a, kk):
     global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
-    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
-    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount
+    global t, dt, tfinal, eps, pi, cflc, em, vmax, gamma, gm1, indk
     vc = 0.
     if mp >= 1:
         vc = sum(wt[k] * a[k] * pnd(xp[k], kk) for k in range(0, mp + 1))
@@ -315,8 +314,8 @@ def gint(a, kk):
 
 def fint(a, kk, mm):
     global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
-    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
-    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount
+    global t, dt, tfinal, eps, pi, cflc, em, vmax, gamma, gm1, indk
     uu = np.zeros(mnm + 1)
     vc = 0.
     if mp >= 1:
@@ -336,8 +335,8 @@ def fint(a, kk, mm):
 
 def umint(a, kk):
     global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
-    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
-    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount
+    global t, dt, tfinal, eps, pi, cflc, em, vmax, gamma, gm1, indk
     aa = np.zeros(md + 1)
     uu = np.zeros(mnm + 1)
     vc = 0.
@@ -353,8 +352,8 @@ def umint(a, kk):
 
 def proj(a, uu, vv):
     global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
-    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
-    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount
+    global t, dt, tfinal, eps, pi, cflc, em, vmax, gamma, gm1, indk
     b = np.zeros(nvm + 1)
 
     rho = uu[1]
@@ -374,8 +373,8 @@ def proj(a, uu, vv):
 
 def update(io):
     global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
-    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
-    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount
+    global t, dt, tfinal, eps, pi, cflc, em, vmax, gamma, gm1, indk
     fluxg = np.zeros(ndm + 4)
     a = np.zeros(md + 1)
     b = np.zeros(nvm + 1)
@@ -581,8 +580,8 @@ def update(io):
 
 def tvb_limiter():
     global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
-    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
-    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount
+    global t, dt, tfinal, eps, pi, cflc, em, vmax, gamma, gm1, indk
     evr = np.zeros((ndm + 4, mnm + 1, mnm + 1))
     evl = np.zeros((ndm + 4, mnm + 1, mnm + 1))
     ind = np.zeros((ndm + 4, mnm + 1))
@@ -708,8 +707,8 @@ def tvb_limiter():
 # 3rd order IMEX scheme
 def DGIMEX3():
     global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
-    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
-    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount
+    global t, dt, tfinal, eps, pi, cflc, em, vmax, gamma, gm1, indk
     bc_u()
     bc_g()
     tvb_limiter()
@@ -726,10 +725,10 @@ def DGIMEX3():
         update(io)
 
 
-def saves():
+def saves(l):
     global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
-    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount, nx
-    global t, dt, tfinal, eps, pi, cflc, cfld, em, vmax, gamma, gm1, indk
+    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount
+    global t, dt, tfinal, eps, pi, cflc, em, vmax, gamma, gm1, indk
     a = np.zeros(md + 1)
     uu = np.zeros(mnm + 1)
     b = np.zeros(nvm + 1)
@@ -769,35 +768,82 @@ def saves():
         for m in range(1, mn + 1):
             [a.__setitem__(k, u[k, i, m]) for k in range(mp + 1)]
             uu[m] = poly(a, mp, 0.0)
+        rho = uu[1]
+        vel = uu[2] / uu[1]
+        tem = abs(uu[3] / 0.5 / uu[1] - vel ** 2)
 
-        with open('U.txt', 'a') as f_u:
-            for k in range(mp + 1):
-                f_u.write(
-                    f"{t:.5e} {x[i] + xp[k] * dx:.5e} {u[k, i, 1]:.5e} {u[k, i, 2] / u[k, i, 1]:.5e} {(u[k, i, 3] - 0.5 * u[k, i, 2] ** 2 / u[k, i, 1]) / 0.5 / u[k, i, 1]:.5e}\n")
+        for j in range(0, nvm + 1):
+            vmu = rho / np.sqrt(2. * pi * tem) * np.exp(-(v[j] - vel) ** 2 / (2. * tem))
+            [a.__setitem__(k, g[k, i, j]) for k in range(mp + 1)]
+            gg = poly(a, mp, 0.)
+            b[j] = (v[j] - vel) ** 3. * (gg)
 
-        with open('g.txt', 'a') as f_g:
-            for k in range(mp + 1):
-                for j in range(nvm + 1):
-                    f_g.write(f"{t:.5e} {x[i] + xp[k] * dx:.5e} {v[j]:.5e} {g[k, i, j]:.5e}\n")
+        # For training:
+        # with open('U.txt', 'a') as f_u:
+        #     for k in range(mp + 1):
+        #         f_u.write(
+        #             f"{t:.5e} {x[i] + xp[k] * dx:.5e} {u[k, i, 1]:.5e} {u[k, i, 2] / u[k, i, 1]:.5e} {(u[k, i, 3] - 0.5 * u[k, i, 2] ** 2 / u[k, i, 1]) / 0.5 / u[k, i, 1]:.5e}\n")
+        #
+        # with open('g.txt', 'a') as f_g:
+        #     for k in range(mp + 1):
+        #         for j in range(nvm + 1):
+        #             f_g.write(f"{t:.5e} {x[i] + xp[k] * dx:.5e} {v[j]:.5e} {g[k, i, j]:.5e}\n")
+
+        # For solving
+        with open(f'den{l}.txt', 'a') as f_density, \
+                open(f'vel{l}.txt', 'a') as f_velocity, \
+                open(f'tem{l}.txt', 'a') as f_temperature, \
+                open(f'heat{l}.txt', 'a') as f_heat_flux:
+            f_density.write(f"{x[i]} {uu[1]}\n")
+            f_velocity.write(f"{x[i]} {uu[2] / uu[1]}\n")
+            f_temperature.write(f"{x[i]} {(uu[3] - 0.5 * uu[2] ** 2 / uu[1]) / 0.5 / uu[1]}\n")
+            f_heat_flux.write(f"{x[i]} {eps * ave(b) / 2.}\n")
+
+    with open(f'den{l}.txt', 'a') as f_density, \
+            open(f'vel{l}.txt', 'a') as f_velocity, \
+            open(f'tem{l}.txt', 'a') as f_temperature, \
+            open(f'heat{l}.txt', 'a') as f_heat_flux:
+        f_density.write("1.4 0.\n")
+        f_velocity.write("1.4 0.\n")
+        f_temperature.write("1.4 0.\n")
+        f_heat_flux.write("1.4 0.\n")
+
+
 
 
 # ================= Program starts =================
 initdata()
 nx = 50
+tt1 = 0.05
+tt2 = 0.1
+tfinal = 0.2
 
 tbegin = time.time()
 init()
-dt = setdt()
 
 # ============== Begin time evolution ==============
 
 while t < tfinal - 1.e-15 and kcount < kcmax:
     print(kcount)
+    dt = setdt()
+    nw = 0
     ipause = 0
-    if t >= tfinal - 1.e-15:
-        break
-    if kcount % 200 == 0 and kcount != 0:
+    # For training:
+    # if kcount % 200 == 0 and kcount != 0:
+    #     ipause = 1
+    #     print(t, dt)
+
+    # For solving:
+    if t + dt > tt1 and t < tt1 - 1e-15:
+        dt = tt1 - t
+        nw = 1
         ipause = 1
+    elif t + dt > tt2 and t < tt2 - 1e-15:
+        dt = tt2 - t
+        nw = 2
+        ipause = 1
+
+    if kcount % 200 == 0:
         print(t, dt)
 
     DGIMEX3()
@@ -805,10 +851,10 @@ while t < tfinal - 1.e-15 and kcount < kcmax:
     t += dt
     kcount += 1
     if ipause == 1:
-        saves()
+        saves(nw)
 
 tend = time.time()
 print(' ')
 print(t, kcount, tend - tbegin)
-
-saves()
+nw = 3
+saves(nw)
