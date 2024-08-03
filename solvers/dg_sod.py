@@ -765,7 +765,7 @@ def saves():
             umcell = umint(aa, k)
             utem[k, i] = ai[k] * cdx * (-umcell + fluxmu[i] * pn(0.5, k) - fluxmu[i - 1] * pn(-0.5, k))
 
-    for i in range(1, nx + 1):
+    for i in range(1 + sft, nx + 1 + sft):
         for m in range(1, mn + 1):
             [a.__setitem__(k, u[k, i, m]) for k in range(mp + 1)]
             uu[m] = poly(a, mp, 0.0)
