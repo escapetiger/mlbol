@@ -10,7 +10,6 @@
 """
 import numpy as np
 import time
-import os
 
 # Constants
 nd = 400
@@ -21,6 +20,13 @@ mg = 5
 nvm = 99
 tol = 1e-6
 sft = 3
+eps = 0.01
+mo = 3
+mp = mo - 1
+mn = mnm
+cflc = 0.05
+i_bc = 3
+kcmax = 100000000
 
 # initialize
 def initdata():
@@ -73,16 +79,7 @@ def initdata():
         [-0.5, 0.5, 0.5, 0.0],
         [1.5, -1.5, 0.5, 0.5]
     ])
-    # print(rk_ex[1][0])
-    # os.system("pause")
-    [vq.__setitem__(i, -1.+i*2./nvm) for i in range(0, nvm+1)]
-    eps = 0.01
-    mo = 3
-    mp = mo - 1
-    mn = mnm
-    cflc = 0.05
-    i_bc = 3
-    kcmax = 100000000
+    vq[:nvm + 1] = -1. + np.arange(0, nvm + 1) * 2. / nvm
     # nodal DG Gauss quadrature points and weights
     if mp == 0:
         xp[0] = 0.
@@ -109,7 +106,7 @@ def initdata():
         wt[2] = wt[1]
         wt[3] = wt[0]
     # inverse of weights
-    [ai.__setitem__(k, 1./wt[k]) for k in range(0, mp+1)]
+    ai[:mp + 1] = 1. / wt[:mp + 1]
     # here gamma is different from classic compressible Euler eqns
     gamma = 3.
     gm1 = gamma - 1.
@@ -255,9 +252,6 @@ def pnd(xx, kk):
     return pnd
 
 def poly(a, m, xx0):
-    global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
-    global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount
-    global t, dt, tfinal, eps, pi, cflc, em, vmax, gamma, gm1, indk
     poly = 0.
     poly = sum(a[i] * pn(xx0, i) for i in range(0, m + 1))
     return poly
@@ -274,10 +268,10 @@ def sminmod3(xx, yy, zz):
     global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
     global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount
     global t, dt, tfinal, eps, pi, cflc, em, vmax, gamma, gm1, indk
-    if abs(xx) <= 1. * dx ** 2:
+    if abs(xx) <= dx ** 2:
         sminmod3 = xx
     else:
-        sminmod3 = np.sign(xx) * max(0.0, min(abs(xx), yy * np.sign(xx), zz * np.sign(xx)))
+        sminmod3 = sign(xx) * max(0.0, min(abs(xx), yy * sign(xx), zz * sign(xx)))
     return sminmod3
 
 def vm(vv, mm):
@@ -317,16 +311,17 @@ def fint(a, kk, mm):
     global xq, cq, xp, wt, ai, rk_ex, rk_im, mp, mn, mo, i_bc, kcmax, kcount
     global t, dt, tfinal, eps, pi, cflc, em, vmax, gamma, gm1, indk
     uu = np.zeros(mnm + 1)
+    ff = 0.
     vc = 0.
     if mp >= 1:
         for k in range(0, mp + 1):
             xx = xp[k]
             [uu.__setitem__(m, a[k, m]) for m in range(1, mn + 1)]
-            if mm==1:
+            if mm == 1:
                 ff = uu[2]
-            elif mm==2:
+            elif mm == 2:
                 ff = 2. * uu[3]
-            elif mm==3:
+            elif mm == 3:
                 ff = (uu[3] + 2. * (uu[3] - 0.5 * uu[2] ** 2 / uu[1])) * uu[2] / uu[1]
 
             vc += wt[k] * ff * pnd(xx, kk)
@@ -396,7 +391,7 @@ def update(io):
     # Update u
     bc_u()
     bc_g()
-
+    # print(uc[0, :, 1, io])
     em = 1e-15
     for i in range(-1 + sft, nx + 1 + sft):
         for mm in range(1, mn + 1):
@@ -418,7 +413,6 @@ def update(io):
         am[1] = max(am[1], abs(eigr[1]))
         am[2] = max(am[2], abs(eigr[2]))
         am[3] = max(am[3], abs(eigr[3]))
-
         for mm in range(1, mn + 1):
             for k in range(0, mp + 1):
                 a[k] = u[k, i, mm]
@@ -448,18 +442,17 @@ def update(io):
     for m in range(1, mn + 1):
         # Flux of <vmg>: central
         for i in range(-1 + sft, nx + 1 + sft):
-            if indk[i] == 0 or indk[i + 1] == 0:
-                for k in range(0, mp + 1):
-                    for j in range(nvm + 1):
-                        b[j] = v[j] * vm(v[j], m) * g[k, i, j]
-                    a[k] = ave(b)
-                fluxg[i] = poly(a, mp, 0.5)
+            for k in range(0, mp + 1):
+                for j in range(nvm + 1):
+                    b[j] = v[j] * vm(v[j], m) * g[k, i, j]
+                a[k] = ave(b)
+            fluxg[i] = poly(a, mp, 0.5)
 
-                for k in range(0, mp + 1):
-                    for j in range(nvm + 1):
-                        b[j] = v[j] * vm(v[j], m) * g[k, i + 1, j]
-                    a[k] = ave(b)
-                fluxg[i] = eps * 0.5 * (fluxg[i] + poly(a, mp, -0.5))
+            for k in range(0, mp + 1):
+                for j in range(nvm + 1):
+                    b[j] = v[j] * vm(v[j], m) * g[k, i + 1, j]
+                a[k] = ave(b)
+            fluxg[i] = eps * 0.5 * (fluxg[i] + poly(a, mp, -0.5))
 
         for i in range(0 + sft, nx + 1 + sft):
             for k in range(0, mp + 1):
@@ -492,7 +485,7 @@ def update(io):
                 u[k, i, m] = uc[k, i, m, io - 1]
 
     bc_u()
-
+    # print(uc[0, :, 1, io - 1])
     # DG formulation of T_x: central flux
     for i in range(-1 + sft, nx + 1 + sft):
         for mm in range(1, mn + 1):
@@ -577,6 +570,11 @@ def update(io):
                 gc[k, i, j, io - 1] = gc[k, i, j, io - 1] / (eps / dt + rk_im[io - 1, io - 1])
                 g[k, i, j] = gc[k, i, j, io - 1]
 
+def sign(xx):
+    if xx >= 0:
+        return 1
+    else:
+        return -1
 
 def tvb_limiter():
     global u, g, u0, g0, utem, uc, gc, flxu, flxg, flxmu, flxmg, x, dx, cdx, dx2, v, vq, wq, vleft, vright
@@ -611,7 +609,7 @@ def tvb_limiter():
                 um[i, m] = poly(a, mp, 0.5)
                 up[i, m] = poly(a, mp, -0.5)
                 ubar[i, m] = uave(a)
-                uxx = 0.
+                uxx = 0.0
                 uxx = sum(a[k]*xp[k] for k in range(0, mp + 1))
                 ux[i, m] = 12.0 * uxx
 
@@ -639,7 +637,7 @@ def tvb_limiter():
             evr[i, 3, 3] = hm + t0
 
             rcm = 1.0 / cm
-            b1 = gm1 * rcm ** 2
+            b1 = gm1 * (rcm ** 2)
             b2 = qm * b1
             t0 = vxm * rcm
             t1 = b1 * vxm
@@ -680,7 +678,6 @@ def tvb_limiter():
 
                 for k in range(0, mp + 1):
                     uk[k, i, m] = 0.0
-
                     for mm in range(1, mn + 1):
                         uk[k, i, m] += evl[i, m, mm] * u[k, i, mm]
 
@@ -689,13 +686,13 @@ def tvb_limiter():
                 dl = sminmod3(dt0[m] - ddtp[m], dtm[m], dtp[m])
                 ur = dt0[m] + dr
                 ul = dt0[m] - dl
-                if abs(ur - ddtm[m]) > tol or abs(ul - ddtp[m]) > tol:
+                if abs(ur - ddtm[m]) > tol or abs(ul-ddtp[m]) > tol:
                     ind[i, m] = 1
 
             for m in range(1, mn + 1):
                 if ind[i, m] == 1:
-                    uhx = sminmod3(utx[m], dtm[m] * 2.0, dtp[m] * 2.0)
-                    for k in range(0, mp + 1):
+                    uhx = sminmod3(utx[m], dtm[m] * 2., dtp[m] * 2.)
+                    for k in range(mp + 1):
                         uk[k, i, m] = dt0[m] + uhx * xp[k]
 
             for k in range(0, mp + 1):
@@ -703,6 +700,7 @@ def tvb_limiter():
                     u[k, i, m] = 0.0
                     for mm in range(1, mn + 1):
                         u[k, i, m] += evr[i, m, mm] * uk[k, i, mm]
+
 
 # 3rd order IMEX scheme
 def DGIMEX3():
@@ -715,8 +713,8 @@ def DGIMEX3():
 
     indk = np.zeros(ndm + 4)
 
-    u0 = u
-    g0 = g
+    u0 = u.copy()
+    g0 = g.copy()
 
     update(1)
 
@@ -794,19 +792,11 @@ def saves(l):
                 open(f'vel{l}.txt', 'a') as f_velocity, \
                 open(f'tem{l}.txt', 'a') as f_temperature, \
                 open(f'heat{l}.txt', 'a') as f_heat_flux:
-            f_density.write(f"{x[i]} {uu[1]}\n")
-            f_velocity.write(f"{x[i]} {uu[2] / uu[1]}\n")
-            f_temperature.write(f"{x[i]} {(uu[3] - 0.5 * uu[2] ** 2 / uu[1]) / 0.5 / uu[1]}\n")
-            f_heat_flux.write(f"{x[i]} {eps * ave(b) / 2.}\n")
+            f_density.write(f"{x[i]:13.5e} {uu[1]:13.5e}\n")
+            f_velocity.write(f"{x[i]:13.5e} {uu[2] / uu[1]:13.5e}\n")
+            f_temperature.write(f"{x[i]:13.5e} {(uu[3] - 0.5 * uu[2] ** 2 / uu[1]) / 0.5 / uu[1]:13.5e}\n")
+            f_heat_flux.write(f"{x[i]:13.5e} {eps * ave(b) / 2.:13.5e}\n")
 
-    with open(f'den{l}.txt', 'a') as f_density, \
-            open(f'vel{l}.txt', 'a') as f_velocity, \
-            open(f'tem{l}.txt', 'a') as f_temperature, \
-            open(f'heat{l}.txt', 'a') as f_heat_flux:
-        f_density.write("1.4 0.\n")
-        f_velocity.write("1.4 0.\n")
-        f_temperature.write("1.4 0.\n")
-        f_heat_flux.write("1.4 0.\n")
 
 
 
@@ -824,7 +814,6 @@ init()
 # ============== Begin time evolution ==============
 
 while t < tfinal - 1.e-15 and kcount < kcmax:
-    print(kcount)
     dt = setdt()
     nw = 0
     ipause = 0
@@ -843,8 +832,8 @@ while t < tfinal - 1.e-15 and kcount < kcmax:
         nw = 2
         ipause = 1
 
-    if kcount % 200 == 0:
-        print(t, dt)
+    # if kcount % 200 == 0:
+    #     print(t, dt)
 
     DGIMEX3()
 
